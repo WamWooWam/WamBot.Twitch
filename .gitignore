@@ -14,8 +14,11 @@
 *.userprefs
 
 # lmao
+appsettings.json
 appsettings.*.json
 *.db
+launchSettings.json
+contributors.txt
 
 # Build results
 [Dd]ebug/
