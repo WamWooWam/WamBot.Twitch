@@ -14,15 +14,15 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace WamBot.Twitch.Api
 {
-    internal class Command
+    internal class Command 
     {
         private CommandAttribute _commandAttribute;
         private Type _categoryType;
 
         private CooldownAttribute _cooldown;
         private ChecksAttribute[] _checkAttributes;
-        private Dictionary<string, DateTime> _lastRunTimes
-            = new Dictionary<string, DateTime>();
+        private Dictionary<string, DateTimeOffset> _lastRunTimes
+            = new Dictionary<string, DateTimeOffset>();
 
         public Command(MethodInfo method, Type categoryType)
         {
@@ -61,7 +61,7 @@ namespace WamBot.Twitch.Api
 
             if (_cooldown != null && !(ctx.Message.IsBroadcaster || ctx.Message.IsModerator))
             {
-                if (_lastRunTimes.TryGetValue(_cooldown.PerUser ? ctx.Message.UserId : "", out var lastRun) && (DateTime.Now - lastRun) < _cooldown.Cooldown)
+                if (_lastRunTimes.TryGetValue(_cooldown.PerUser ? ctx.Message.UserId : "", out var lastRun) && (DateTimeOffset.UtcNow - lastRun) < _cooldown.Cooldown)
                     return false;
             }
             
@@ -80,7 +80,7 @@ namespace WamBot.Twitch.Api
                     return;
 
                 if (_cooldown != null && !(ctx.Message.IsBroadcaster || ctx.Message.IsModerator))
-                    _lastRunTimes[_cooldown.PerUser ? ctx.Message.UserId : ""] = DateTime.Now;
+                    _lastRunTimes[_cooldown.PerUser ? ctx.Message.UserId : ""] = DateTimeOffset.UtcNow;
 
                 foreach (var param in ReflectionUtilities.GetMethodParameters(Method))
                 {

@@ -1,11 +1,13 @@
 # WamBot.Twitch
 A bot for my [Twitch Channel](https://twitch.tv/wamwoowam)! Consists mostly of joke commands with a sprinking of useful things in there
 
-
 ## ⚠ WARNING ⚠
 Because, frankly, it's funny, the code for this bot contains a large amount of strong language and adult themes. If you're a future employer judging me for writing this, I didn't want to work for you anyway.
 
 It's also mostly been hacked together on stream, where a quick implementation means more than a fast or good one, this is not a good benchmark of skill.
+
+## I wanna use this!
+To add WamBot to your Twitch chat, visit [twitch.tv/wambot_/chat](https://www.twitch.tv/wambot_/chat) and type `!add`! To remove, type `!remove`
 
 ## Commands
 #### `!onyx`
