@@ -1,0 +1,97 @@
+﻿@model WamBot.Twitch.Data.DbUser
+
+@{
+    ViewData["Title"] = "Details";
+}
+
+<h1>Details</h1>
+
+<div>
+    <h4>User: @Model.Name</h4>
+    <hr />
+    <dl class="row">
+        <dt class="col-sm-3">
+            @Html.DisplayNameFor(model => model.OnyxPoints)
+        </dt>
+        <dd class="col-sm-9">
+            @Html.DisplayFor(model => model.OnyxPoints)
+        </dd>
+        <dt class="col-sm-3">
+            @Html.DisplayNameFor(model => model.PenisOffset)
+        </dt>
+        <dd class="col-sm-9">
+            @Html.DisplayFor(model => model.PenisOffset)
+        </dd>
+        <dt class="col-sm-3">
+            @Html.DisplayNameFor(model => model.PenisType)
+        </dt>
+        <dd class="col-sm-9">
+            @Html.DisplayFor(model => model.PenisType)
+        </dd>
+        <dt class="col-sm-3">
+            @Html.DisplayNameFor(model => model.ConsecutiveWins)
+        </dt>
+        <dd class="col-sm-9">
+            @Html.DisplayFor(model => model.ConsecutiveWins)
+        </dd>
+        <dt class="col-sm-3">
+            @Html.DisplayNameFor(model => model.ConsecutiveLosses)
+        </dt>
+        <dd class="col-sm-9">
+            @Html.DisplayFor(model => model.ConsecutiveLosses)
+        </dd>
+        <dt class="col-sm-3">
+            @Html.DisplayNameFor(model => model.AllTimeConsecutiveWins)
+        </dt>
+        <dd class="col-sm-9">
+            @Html.DisplayFor(model => model.AllTimeConsecutiveWins)
+        </dd>
+        <dt class="col-sm-3">
+            @Html.DisplayNameFor(model => model.AllTimeConsecutiveLosses)
+        </dt>
+        <dd class="col-sm-9">
+            @Html.DisplayFor(model => model.AllTimeConsecutiveLosses)
+        </dd>
+        <dt class="col-sm-3">
+            @Html.DisplayNameFor(model => model.PenisSize)
+        </dt>
+        <dd class="col-sm-9">
+            @Html.DisplayFor(model => model.PenisSize)
+        </dd>
+    </dl>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>
+                    Channel
+                </th>
+                <th>
+                    W$
+                </th>
+                <th>
+                    Last Stream
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Model.DbChannelUsers)
+            {
+                <tr>
+                    <td>
+                        @item.ChannelName
+                    </td>
+                    <td>
+                        @item.Balance
+                    </td>
+                    <td>
+                        @item.LastStreamId
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+<div>
+    <a asp-action="Edit" asp-route-id="@Model.Name">Edit</a> | <a asp-action="Index">Back to List</a>
+</div>

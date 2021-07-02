@@ -3,11 +3,10 @@ using System.Collections.Generic;
 using System.Text;
 using System.Linq;
 using WamBot.Twitch;
-using WamBot.Twitch.Api;
 using WamBot.Twitch.Commands;
 using Microsoft.Extensions.Logging;
 
-namespace WamBot.Twitch.Services
+namespace WamBot.Twitch.Api
 {
     internal class CommandRegistry
     {

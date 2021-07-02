@@ -8,8 +8,10 @@ using TwitchLib.Api.Services;
 using TwitchLib.Api;
 using WamBot.Twitch.Api;
 using WamBot.Twitch.Data;
-using WamBot.Twitch.Services;
 using TwitchLib.Api.V5.Models.Users;
+using System.ComponentModel;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 
 namespace WamBot.Twitch.Commands
 {
@@ -19,7 +21,8 @@ namespace WamBot.Twitch.Commands
         private readonly TwitchAPI _twitchApi;
         private readonly BotDbContext _database;
         private readonly IParamConverter<User> _userConverter;
-
+        private readonly IMemoryCache _userCache;
+        private readonly ILogger<PenisCommands> _logger;
         private static Random _random = new Random();
         private static readonly string[] _errorCodes = new[]
         {
@@ -55,47 +58,24 @@ namespace WamBot.Twitch.Commands
         public PenisCommands(
             IParamConverter<User> userConverter,
             BotDbContext database,
-            TwitchAPI twitchAPI)
+            TwitchAPI twitchAPI,
+            IMemoryCache cache,
+            ILogger<PenisCommands> logger)
         {
             _twitchApi = twitchAPI;
             _database = database;
             _userConverter = userConverter;
+            _userCache = cache;
+            _logger = logger;
         }
 
         [Default]
         [Command("Cock", "The most accurate penis sizing algorithm you will ever see.")]
         public async Task CockAsync(CommandContext ctx, string target = null)
         {
-            var info = await GetUserPenisInfoAsync(ctx, target);
+            var user = await (target == null ? _database.GetOrCreateUserAsync(ctx.Message) : _database.GetOrCreateUserAsync(_twitchApi, target));
 
-            static string GetCockSizeEmote(double size)
-            {
-                if (size <= 2)
-                    return "🤏 🔎 ";
-                if (size <= 4)
-                    return "source6Approve ";
-
-                return "";
-            }
-
-            var random = new Random((int)info.userId + info.dbUser.PenisOffset);
-            double size;
-            switch (info.dbUser?.PenisType ?? PenisType.None)
-            {
-                case PenisType.None:
-                    ctx.Reply($"Failed to calculate @{info.userName}'s penis size: {_errorCodes[_random.Next(_errorCodes.Length)]}.");
-                    return;
-                case PenisType.Tiny:
-                case PenisType.Normal:
-                case PenisType.Large:
-                    size = CalculatePenisSize(info.dbUser, info.userId, out var fmt);
-                    ctx.Reply($"{GetCockSizeEmote(size)}@{info.userName}'s {_penisEuphemisms[_random.Next(_penisEuphemisms.Length)]} is {size.ToString(fmt)} {(size == 1 ? "inch" : "inches")} ({(size * 2.5).ToString(fmt)}cm) long! 8{new string('=', (int)size)}D");
-                    return;
-                case PenisType.Inverse:
-                    size = (int)Math.Floor(random.RandomNormal(6, 24, 4));
-                    ctx.Reply($"@{info.userName}'s {_vaginaEuphemisms[_random.Next(_vaginaEuphemisms.Length)]} is {size:N0} {(size == 1 ? "inch" : "inches")} ({size * 2.5:N0}cm) deep! ){new string('=', (int)size)}8");
-                    return;
-            }
+            await SendPenisMessageAsync(ctx, user, target);
         }
 
         [Command("Swordfight", "The biggest cock wins!", "fight", "duel")]
@@ -118,14 +98,8 @@ namespace WamBot.Twitch.Commands
                 return;
             }
 
-            var mainSize = CalculatePenisSize(mainUser.dbUser, mainUser.userId, out _);
-            var targetSize = CalculatePenisSize(targetUser.dbUser, mainUser.userId, out _);
-
-            if (mainSize == targetSize)
-            {
-                ctx.Reply($"The duel between @{mainUser.userName} and @{targetUser.userName} resulted in a tie! {mainSize} inches vs. {targetSize} inches");
-                return;
-            }
+            var mainSize = PenisUtils.CalculatePenisSize(mainUser.dbUser, out _);
+            var targetSize = PenisUtils.CalculatePenisSize(targetUser.dbUser, out _);
 
             if ((targetType == PenisType.Inverse || mainType == PenisType.Inverse) && (targetType != PenisType.Inverse || mainType != PenisType.Inverse))
             {
@@ -133,35 +107,33 @@ namespace WamBot.Twitch.Commands
                 return;
             }
 
-            var winner = mainSize > targetSize ? mainUser : targetUser;
-            ctx.Reply($"The winner is @{winner.userName}! {Math.Max(mainSize, targetSize)} inches vs {Math.Min(mainSize, targetSize)} inches.");
+            var mainUserSize = (user: mainUser, size: mainSize, ratio: mainSize / Math.Max((double)(targetSize + mainSize), 1));
+            var targetUserSize = (user: targetUser, size: targetSize, ratio: targetSize / Math.Max((double)(targetSize + mainSize), 1));
+
+            var num = _random.NextDouble();
+            var winner = num > mainUserSize.ratio ? targetUserSize : mainUserSize;
+            var loser = num > mainUserSize.ratio ? mainUserSize : targetUserSize;
+            ctx.Reply($"The winner is @{winner.user.userName}! {winner.size} inches vs {loser.size} inches.");
         }
 
 
         [Command("Set Cock", "Set your cock type.", "set")]
         public async Task SetCockAsync(CommandContext ctx)
         {
-            var id = long.Parse(ctx.Message.UserId);
-            var dbUser = await _database.DbUsers.FindAsync(ctx.Message.Username);
-            if (dbUser == null)
+            var user = await _database.GetOrCreateUserAsync(ctx.Message);
+            if (user.PenisType == PenisType.Normal)
             {
-                dbUser = new DbUser() { Name = ctx.Message.Username };
-                _database.DbUsers.Add(dbUser);
-            }
-
-            if (dbUser.PenisType == PenisType.Normal)
-            {
-                dbUser.PenisType = PenisType.Inverse;
+                user.PenisType = PenisType.Inverse;
                 ctx.Reply("You now have a vagina, congratulations!");
             }
-            else if (dbUser.PenisType == PenisType.Inverse)
+            else if (user.PenisType == PenisType.Inverse)
             {
-                dbUser.PenisType = PenisType.None;
+                user.PenisType = PenisType.None;
                 ctx.Reply("You now have nothing, congratulations!");
             }
-            else if (dbUser.PenisType == PenisType.None)
+            else if (user.PenisType == PenisType.None)
             {
-                dbUser.PenisType = PenisType.Normal;
+                user.PenisType = PenisType.Normal;
                 ctx.Reply("You now have a penis, congratulations!");
             }
 
@@ -172,23 +144,18 @@ namespace WamBot.Twitch.Commands
         [Command("Admin Set Cock", null, "force")]
         public async Task SetCockAsync(CommandContext ctx, User targetUser, PenisType type)
         {
-            var id = long.Parse(targetUser.Id);
-            var dbUser = await _database.DbUsers.FindAsync(targetUser.Name);
-            if (dbUser == null)
-            {
-                dbUser = new DbUser() { Name = targetUser.Name };
-                _database.DbUsers.Add(dbUser);
-            }
+            var user = await _database.GetOrCreateUserAsync(targetUser);
+            user.PenisType = type;
 
             ctx.Reply($"Set {targetUser.Name}'s penis type to {type}");
-            dbUser.PenisType = type;
             await _database.SaveChangesAsync();
         }
 
+        [Cooldown(30, PerUser = true)]
         [Command("Shuffle Cock", "Are you unhappy with your penis? For just W$100, shuffle it!", "shuffle")]
         public async Task ShuffleCockAsync(CommandContext ctx)
         {
-            var channelUser = EconomyUtils.GetOrCreateChannelUser(_database, _twitchApi, ctx.Message.Channel, ctx.Message.Username);
+            var channelUser = await _database.GetOrCreateChannelUserAsync(_twitchApi, ctx.Message.Channel, ctx.Message.Username);
             if (channelUser.Balance < 100.0m)
             {
                 ctx.Reply($"@{ctx.Message.DisplayName} You don't have enough money to shuffle your cock!");
@@ -197,50 +164,86 @@ namespace WamBot.Twitch.Commands
 
             channelUser.Balance -= 100;
 
-            var dbUser = await _database.DbUsers.FindAsync(ctx.Message.Username);
-            if (dbUser == null)
-            {
-                dbUser = new DbUser() { Name = ctx.Message.Username };
-                _database.DbUsers.Add(dbUser);
-            }
-
+            var dbUser = await _database.GetOrCreateUserAsync(ctx.Message);
             dbUser.PenisOffset = _random.Next();
-            ctx.Reply($"@{ctx.Message.DisplayName} Your {(dbUser.PenisType == PenisType.Inverse ? "vagina" : "penis")} size has been shuffled!");
 
+            await SendPenisMessageAsync(ctx, dbUser, dbUser.Name);
             await _database.SaveChangesAsync();
         }
 
+        private async Task SendPenisMessageAsync(CommandContext ctx, DbUser dbUser, string name)
+        {
+            static string GetCockSizeEmote(double size)
+            {
+                if (size <= 2)
+                    return "🤏 🔎 ";
+                if (size <= 4)
+                    return "source6Approve ";
 
-        public string FixCasing(string s)
+                return "";
+            }
+
+            if (dbUser == null)
+            {
+                ctx.Reply($"Failed to calculate @{name}'s penis size: {_errorCodes[_random.Next(_errorCodes.Length)]}.");
+                return;
+            }
+
+            var twitchUser = await GetUserForDbUserAsync(dbUser);
+
+            if (twitchUser == null || dbUser.PenisType == PenisType.None)
+            {
+                ctx.Reply($"Failed to calculate @{twitchUser?.DisplayName ?? name}'s penis size: {_errorCodes[_random.Next(_errorCodes.Length)]}.");
+                return;
+            }
+
+            var random = new Random((int)(dbUser.Id + dbUser.PenisOffset));
+            double size;
+            switch (dbUser.PenisType)
+            {
+                case PenisType.Tiny:
+                case PenisType.Normal:
+                case PenisType.Large:
+                    size = PenisUtils.CalculatePenisSize(dbUser, out var fmt);
+                    ctx.Reply($"{GetCockSizeEmote(size)}@{twitchUser.DisplayName}'s {_penisEuphemisms[_random.Next(_penisEuphemisms.Length)]} is {size.ToString(fmt)} {(size == 1 ? "inch" : "inches")} ({(size * 2.5).ToString(fmt)}cm) long! 8{new string('=', (int)size)}D");
+                    return;
+                case PenisType.Inverse:
+                    size = (int)Math.Floor(random.RandomNormal(6, 24, 4));
+                    ctx.Reply($"@{twitchUser.DisplayName}'s {_vaginaEuphemisms[_random.Next(_vaginaEuphemisms.Length)]} is {size:N0} {(size == 1 ? "inch" : "inches")} ({size * 2.5:N0}cm) deep! ){new string('=', (int)size)}8");
+                    return;
+            }
+        }
+
+        private async Task<User> GetUserForDbUserAsync(DbUser dbUser)
+        {
+            try
+            {
+                if (_userCache.TryGetValue($"User_{dbUser.Id}", out User user))
+                {
+                    return user;
+                }
+
+                user = await _twitchApi.V5.Users.GetUserByIDAsync(dbUser.Id.ToString());
+
+                return _userCache.Set($"User_{dbUser.Id}", user, DateTimeOffset.Now + TimeSpan.FromMinutes(10));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get Twitch User for {Id}", dbUser.Id);
+            }
+
+            return null;
+        }
+
+        private string FixCasing(string s)
         {
             if (char.IsLower(s[0]))
-                return char.ToUpper(s[0]) + s.Substring(1);
+                return char.ToUpper(s[0]) + s[1..];
 
             return s;
         }
 
-        public double CalculatePenisSize(DbUser user, long userId, out string formatString)
-        {
-            formatString = "N0";
-            var random = new Random((int)userId + user.PenisOffset);
-            switch (user.PenisType)
-            {
-                case PenisType.Tiny:
-                    formatString = "N2";
-                    return random.RandomNormal(0, 4, 4);
-                case PenisType.Normal:
-                    return (int)Math.Floor(random.RandomBiasedPow(0, 24, 4, 6));
-                case PenisType.Large:
-                    return (int)Math.Floor(random.RandomBiasedPow(0, 24, 2, 12));
-                case PenisType.Inverse:
-                    return (int)Math.Floor(random.RandomNormal(6, 24, 4));
-                default:
-                case PenisType.None:
-                    throw new InvalidOperationException("Can't calculate length of non-existant penis.");
-            }
-        }
-
-        public async Task<(long userId, DbUser dbUser, string displayName, string userName)> GetUserPenisInfoAsync(CommandContext ctx, string target)
+        private async Task<(long userId, DbUser dbUser, string displayName, string userName)> GetUserPenisInfoAsync(CommandContext ctx, string target)
         {
             var userId = 0L;
             var displayName = target;
@@ -265,7 +268,6 @@ namespace WamBot.Twitch.Commands
                 else
                 {
                     userId = target.GetHashCode();
-                    displayName = target;
                     isUser = false;
                 }
             }
@@ -273,9 +275,10 @@ namespace WamBot.Twitch.Commands
             var dbUser = await _database.DbUsers.FindAsync(userName);
             if (dbUser == null)
             {
-                dbUser = new DbUser() { Name = userName, PenisType = isUser ? PenisType.Normal : PenisType.None };
+                dbUser = new DbUser() { Name = userName, PenisType = isUser ? PenisType.Normal : PenisType.None, Id = userId };
                 if (isUser)
                     _database.DbUsers.Add(dbUser);
+                await _database.SaveChangesAsync();
             }
 
             return (userId, dbUser, displayName, userName);

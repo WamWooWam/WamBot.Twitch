@@ -1,4 +1,5 @@
-﻿using Microsoft.QueryStringDotNET;
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -48,10 +49,11 @@ namespace WamBot.Twitch.Commands
                     ctx.Reply($"I couldn't find a suitable full-game category called '{category}'!");
                 else
                     ctx.Reply($"I couldn't find a suitable full-game category!");
+
                 return;
             }
 
-            var builder = new QueryString { { "top", "1" }, { "embed", "players" } };
+            var builder = new Dictionary<string,string> { { "top", "1" }, { "embed", "players" } };
             var srcVariables = await httpClient.GetSRCObjectAsync<List<SRCVariable>>($"categories/{srcCategory.Id}/variables");
             var usedVariables = FilterVariables(variables, srcVariables);
             foreach (var item in usedVariables)
@@ -59,7 +61,7 @@ namespace WamBot.Twitch.Commands
                 builder.Add($"var-{item.Key.Id}", item.Value);
             }
 
-            var leaderboard = await httpClient.GetSRCObjectAsync<SRCLeaderboard>($"leaderboards/{srcGame.Id}/category/{srcCategory.Id}?" + builder.ToString());
+            var leaderboard = await httpClient.GetSRCObjectAsync<SRCLeaderboard>(QueryHelpers.AddQueryString($"leaderboards/{srcGame.Id}/category/{srcCategory.Id}", builder));
 
             var run = leaderboard.Runs[0].Run;
             var time = TimeSpan.FromSeconds(run.Times.Primary);
@@ -79,7 +81,7 @@ namespace WamBot.Twitch.Commands
             var videoUrl = "";
             if (video != null)
             {
-                var query = QueryString.Parse(video.Query.TrimStart('?'));
+                var query = QueryHelpers.ParseQuery(video.Query.TrimStart('?'));
                 if (video.Host == "youtube.com" || video.Host == "www.youtube.com")
                 {
                     videoUrl = "https://youtu.be/" + query["v"];

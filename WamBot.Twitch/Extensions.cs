@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -14,6 +15,11 @@ namespace WamBot.Twitch
 {
     public static class Extensions
     {
+        public static double TimestampToMilliseconds(long timestamp)
+        {
+            return (double)(Stopwatch.GetTimestamp() - timestamp) / (Stopwatch.Frequency / 1000);
+        }
+
         internal static char[] _quotes = new[] { '"', '”', '“', '\'', '`' };
 
         public static IServiceCollection AddParamConverter<T, TImpl>(this IServiceCollection services) where TImpl : IParamConverter<T>

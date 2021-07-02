@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -7,17 +8,21 @@ using System.Threading;
 using System.Threading.Tasks;
 using TwitchLib.Client;
 using TwitchLib.Client.Models;
+using WamBot.Twitch.Interactivity;
 
 namespace WamBot.Twitch.Api
 {
     public class CommandContext
     {
+        private Lazy<InteractivityService> _interactivityLazy;
+
         internal CommandContext(TwitchClient client, ChatMessage chatMessage, IServiceProvider services, string[] args)
         {
             Client = client;
             Message = chatMessage;
             Arguments = args;
             Services = services;
+            _interactivityLazy = new Lazy<InteractivityService>(() => ActivatorUtilities.CreateInstance<InteractivityService>(services, this));
         }
 
         public TwitchClient Client { get; }
@@ -25,6 +30,8 @@ namespace WamBot.Twitch.Api
         public string[] Arguments { get; }
         public string Content => Message.Message;
         public IServiceProvider Services { get; }
+        public InteractivityService Interactivity =>
+            _interactivityLazy.Value;
 
         public void Reply(string message, bool asReply = false)
         {

@@ -23,7 +23,7 @@ namespace WamBot.Twitch
         public T Next()
         {
             var item = _items[_index];
-            if (_index++ >= _items.Length)
+            if (_index++ >= (_items.Length - 1))
             {
                 _index = 0;
                 _items.Shuffle(_random);

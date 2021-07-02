@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.EntityFrameworkCore.Query.Internal;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -6,6 +7,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -51,6 +53,9 @@ namespace WamBot.Twitch
         private readonly ConcurrentDictionary<string, ChannelState> _channelStateStore;
         private readonly Timer _payoutTimer;
 
+        private readonly ConcurrentQueue<Func<Task>> _taskQueue;
+        private Task _queueTask;
+
         private const decimal PER_TICK_BONUS = 0.50m;
         private const decimal TUNE_IN_BONUS = 100.0m;
 
@@ -68,6 +73,7 @@ namespace WamBot.Twitch
             _twitchClient = twitchClient;
             _liveStreamMonitor = liveStreamMonitor;
 
+            _taskQueue = new ConcurrentQueue<Func<Task>>();
             _channelStateStore = new ConcurrentDictionary<string, ChannelState>();
             _payoutTimer = new Timer(OnPayoutTick, null, 0, 60_000);
         }
@@ -109,7 +115,7 @@ namespace WamBot.Twitch
             activeUserStore.StreamId = null;
         }
 
-        private void OnExistingUsersDetected(object sender, OnExistingUsersDetectedArgs e)
+        private void OnExistingUsersDetected(object sender, OnExistingUsersDetectedArgs e) => QueueTask(async () =>
         {
             using var scope = _services.CreateScope();
             using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
@@ -117,7 +123,7 @@ namespace WamBot.Twitch
             var channelState = GetChannelState(e.Channel);
             foreach (var user in e.Users)
             {
-                var dbUser = EconomyUtils.GetOrCreateChannelUser(dbContext, _twitchAPI, e.Channel, user);
+                var dbUser = await dbContext.GetOrCreateChannelUserAsync(_twitchAPI, e.Channel, user);
                 if (channelState.StreamId != null && dbUser.LastStreamId != channelState.StreamId)
                 {
                     dbUser.Balance += TUNE_IN_BONUS;
@@ -132,16 +138,16 @@ namespace WamBot.Twitch
                 activeUser.LastSeen = DateTimeOffset.Now;
             }
 
-            dbContext.SaveChanges();
-        }
+            await dbContext.SaveChangesAsync();
+        });
 
-        private void OnUserJoined(object sender, OnUserJoinedArgs e)
+        private void OnUserJoined(object sender, OnUserJoinedArgs e) => QueueTask(async () =>
         {
             using var scope = _services.CreateScope();
             using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
 
             var channelState = GetChannelState(e.Channel);
-            var dbUser = EconomyUtils.GetOrCreateChannelUser(dbContext, _twitchAPI, e.Channel, e.Username);
+            var dbUser = await dbContext.GetOrCreateChannelUserAsync(_twitchAPI, e.Channel, e.Username);
             if (channelState.StreamId != null && dbUser.LastStreamId != channelState.StreamId)
             {
                 dbUser.Balance += TUNE_IN_BONUS;
@@ -154,8 +160,8 @@ namespace WamBot.Twitch
             activeUser.IsActive = true;
             activeUser.LastSeen = DateTimeOffset.Now;
 
-            dbContext.SaveChanges();
-        }
+            await dbContext.SaveChangesAsync();
+        });
 
         private void OnUserLeft(object sender, OnUserLeftArgs e)
         {
@@ -165,11 +171,14 @@ namespace WamBot.Twitch
             activeUser.LastSeen = DateTimeOffset.Now;
         }
 
-        private void OnPayoutTick(object _)
+        private void OnPayoutTick(object _) => QueueTask(async () =>
         {
+            var stamp = Stopwatch.GetTimestamp();
             using var scope = _services.CreateScope();
             using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
 
+            var i = 0;
+            var j = 0;
             foreach (var state in this._channelStateStore)
             {
                 if (!state.Value.IsLive)
@@ -179,20 +188,51 @@ namespace WamBot.Twitch
                 {
                     if (!user.Value.IsActive)
                         continue;
+                    
+                    j++;
 
-                    var dbUser = EconomyUtils.GetOrCreateChannelUser(dbContext, _twitchAPI, state.Key, user.Key);
-                    if (dbUser.LastStreamId == state.Value.StreamId)
+                    var dbUser = await dbContext.GetOrCreateChannelUserAsync(_twitchAPI, state.Key, user.Key, false);
+                    if (dbUser != null && dbUser.LastStreamId == state.Value.StreamId)
                     {
                         dbUser.Balance += PER_TICK_BONUS;
+                        i++;
                         _logger.LogDebug("Giving {User} per tick bonus!", user.Key);
                     }
                 }
             }
 
-            dbContext.SaveChanges();
-        }
+
+            if (i > 0)
+            {
+                await dbContext.SaveChangesAsync();
+                _logger.LogInformation("Gave {Num1}/{Num2} users per tick bonus ({Time:N2}ms)", i, j, Extensions.TimestampToMilliseconds(stamp));
+            }
+        });
 
         private ChannelState GetChannelState(string channelName)
             => _channelStateStore.TryGetValue(channelName, out var store) ? store : _channelStateStore[channelName] = new ChannelState();
+
+        private async Task RunQueueAsync()
+        {
+            while (_taskQueue.TryDequeue(out var task))
+            {
+                try
+                {
+                    await task();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "An error occured in the task queue!");
+                }
+            }
+        }
+
+        private void QueueTask(Func<Task> task)
+        {
+            _taskQueue.Enqueue(task);
+
+            if (_queueTask == null || _queueTask.IsCompleted)
+                _queueTask = RunQueueAsync();
+        }
     }
 }

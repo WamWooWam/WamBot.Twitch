@@ -3,6 +3,7 @@ using System.IO;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
 
 namespace WamBot.Twitch
 {
@@ -13,8 +14,9 @@ namespace WamBot.Twitch
             var host = Host.CreateDefaultBuilder(args)
                 .ConfigureAppConfiguration(c => c.AddEnvironmentVariables("WAMTWITCH_").AddCommandLine(args))
                 .ConfigureHostConfiguration(c => c.AddEnvironmentVariables("WAMTWITCH_").AddCommandLine(args))
+                .ConfigureWebHostDefaults(b => b.UseStartup<Startup>())
                 .UseSystemd()
-                .Build<Startup>();
+                .Build();
 
             await host.RunAsync();
         }

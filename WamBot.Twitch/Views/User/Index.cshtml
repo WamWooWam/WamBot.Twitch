@@ -1,0 +1,158 @@
+﻿@model WamBot.Twitch.Data.IndexModel
+
+@{
+    ViewData["Title"] = "Index";
+}
+
+<h1>Lisitng Users</h1>
+
+<div class="container p-0">
+    <div class="row mb-2">
+        <div class="col-sm-12 col-md-6 d-flex align-items-center">
+            <p class="m-0">
+                @Model.TotalCount Users
+            </p>
+        </div>
+        <div class="col-sm-12 col-md-6 d-flex justify-content-md-end">
+            @{
+                var prevDisabled = !Model.HasPreviousPage ? "disabled" : "";
+                var nextDisabled = !Model.HasNextPage ? "disabled" : "";
+            }
+
+            <nav>
+                <ul class="pagination m-0">
+                    <li class="page-item @prevDisabled">
+                        <a asp-action="Index"
+                           asp-route-sortBy="@ViewData["CurrentSort"]"
+                           asp-route-sortOrder="@ViewData["CurrentOrder"]"
+                           asp-route-page="@(Model.Page - 1)"
+                           class="page-link">
+                            Previous
+                        </a>
+                    </li>
+
+                    @if (Model.Page - 2 > 0)
+                    {
+                        <li class="page-item">
+                            <a asp-action="Index"
+                               asp-route-sortBy="@ViewData["CurrentSort"]"
+                               asp-route-sortOrder="@ViewData["CurrentOrder"]"
+                               asp-route-page="@(Model.Page - 2)"
+                               class="page-link">
+                                @(Model.Page - 2)
+                            </a>
+                        </li>
+                    }
+
+                    @if (Model.Page - 1 > 0)
+                    {
+                        <li class="page-item">
+                            <a asp-action="Index"
+                               asp-route-sortBy="@ViewData["CurrentSort"]"
+                               asp-route-sortOrder="@ViewData["CurrentOrder"]"
+                               asp-route-page="@(Model.Page - 1)"
+                               class="page-link">
+                                @(Model.Page - 1)
+                            </a>
+                        </li>
+                    }
+
+                    <li class="page-item active">
+                        <a class="page-link" href="#">@Model.Page</a>
+                    </li>
+
+                    @if (Model.Page + 1 <= Model.TotalPages)
+                    {
+                        <li class="page-item">
+                            <a asp-action="Index"
+                               asp-route-sortBy="@ViewData["CurrentSort"]"
+                               asp-route-sortOrder="@ViewData["CurrentOrder"]"
+                               asp-route-page="@(Model.Page + 1)"
+                               class="page-link">
+                                @(Model.Page + 1)
+                            </a>
+                        </li>
+                    }
+
+                    @if (Model.Page + 2 <= Model.TotalPages)
+                    {
+                        <li class="page-item">
+                            <a asp-action="Index"
+                               asp-route-sortBy="@ViewData["CurrentSort"]"
+                               asp-route-sortOrder="@ViewData["CurrentOrder"]"
+                               asp-route-page="@(Model.Page + 2)"
+                               class="page-link">
+                                @(Model.Page + 2)
+                            </a>
+                        </li>
+                    }
+
+                    <li class="page-item @nextDisabled">
+                        <a asp-action="Index"
+                           asp-route-sortBy="@ViewData["CurrentSort"]"
+                           asp-route-sortOrder="@ViewData["CurrentOrder"]"
+                           asp-route-page="@(Model.Page + 1)"
+                           class="page-link">
+                            Next
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+</div>
+<table class="table">
+    <thead>
+        <tr>
+            <th>
+                <a asp-action="Index" asp-route-sortBy="Name" asp-route-sortOrder="@ViewData["NameTargetSortOrder"]">Name</a>
+            </th>
+            <th>
+                <a asp-action="Index" asp-route-sortBy="OnyxPoints" asp-route-sortOrder="@ViewData["OnyxPointsTargetSortOrder"]">Onyx Points</a>
+            </th>
+            <th>
+                <a asp-action="Index" asp-route-sortBy="PenisOffset" asp-route-sortOrder="@ViewData["PenisOffsetTargetSortOrder"]">Penis Offset</a>
+            </th>
+            <th>
+                <a asp-action="Index" asp-route-sortBy="PenisType" asp-route-sortOrder="@ViewData["PenisTypeTargetSortOrder"]">Penis Type</a>
+            </th>
+            <th>
+                <a asp-action="Index" asp-route-sortBy="PenisSize" asp-route-sortOrder="@ViewData["PenisSizeTargetSortOrder"]">Penis Size</a>
+            </th>
+            <th>
+                <a asp-action="Index" asp-route-sortBy="TotalBalance" asp-route-sortOrder="@ViewData["TotalBalanceTargetSortOrder"]">Total Balance</a>
+            </th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in Model.Users)
+        {
+            <tr>
+                <td>
+                    @Html.DisplayFor(modelItem => item.Name)
+                </td>
+                <td>
+                    @Html.DisplayFor(modelItem => item.OnyxPoints)
+                </td>
+                <td>
+                    @Html.DisplayFor(modelItem => item.PenisOffset)
+                </td>
+                <td>
+                    @Html.DisplayFor(modelItem => item.PenisType)
+                </td>
+                <td>
+                    @Html.DisplayFor(modelItem => item.PenisSize)
+                </td>
+                <td>
+                    @EconomyUtils.FormatCash(item.TotalBalance)
+                </td>
+                <td>
+                    <a asp-action="Edit" asp-route-id="@item.Name">Edit</a> |
+                    <a asp-action="Details" asp-route-id="@item.Name">Details</a> |
+                    <a asp-action="Delete" asp-route-id="@item.Name">Delete</a>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

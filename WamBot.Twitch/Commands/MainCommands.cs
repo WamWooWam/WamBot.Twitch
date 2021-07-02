@@ -16,7 +16,6 @@ using TwitchLib.Api.Services;
 using TwitchLib.Api.V5.Models.Users;
 using WamBot.Twitch.Api;
 using WamBot.Twitch.Data;
-using WamBot.Twitch.Services;
 
 namespace WamBot.Twitch.Commands
 {
@@ -160,17 +159,10 @@ namespace WamBot.Twitch.Commands
         [Command("Onyx", "Yeah I totally have an onyx sponsorship honest...")]
         public async Task Onyx(CommandContext ctx)
         {
-            var games = new string[] { "Raid: Shadow Legends", "Diner Dash", "Golf Clash", "Royal Casino", "Toon Blast", "Clash of Clans", "Fruit Ninja", "Angry Birds" };
+            var games = new string[] { "Raid: Shadow Legends", "Diner Dash", "Golf Clash", "Royal Casino", "Toon Blast", "Vikings: War of Clans", "Clash of Clans", "Fruit Ninja", "Angry Birds" };
             var links = new string[] { "https://bit.ly/3b9sOBX", "https://bit.ly/33JmJI3", "https://bit.ly/3bTpBFS", "https://bit.ly/3qhwo18", "https://bit.ly/3eOzHdZ", "https://bit.ly/3y7DWc9", "https://bit.ly/3eMW96Y" };
 
-            var userId = long.Parse(ctx.Message.UserId);
-            var user = await _database.DbUsers.FindAsync(ctx.Message.Username);
-            if (user == null)
-            {
-                user = new DbUser() { Name = ctx.Message.Username };
-                _database.DbUsers.Add(user);
-            }
-
+            var user = await _database.GetOrCreateUserAsync(ctx.Message);
             var onyx = Math.Max(1, Math.Floor(Math.Abs(_random.RandomBiasedPow(0, 256, 128, 128) - 128)));
             user.OnyxPoints += (int)onyx;
 
