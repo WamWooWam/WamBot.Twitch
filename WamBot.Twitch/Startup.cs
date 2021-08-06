@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TwitchLib.Api;
+using TwitchLib.Api.Core.Interfaces;
 using TwitchLib.Api.Services;
 using TwitchLib.Api.V5.Models.Users;
 using TwitchLib.Client;
@@ -24,6 +25,7 @@ using WamBot.Twitch.Api;
 using WamBot.Twitch.Converters;
 using WamBot.Twitch.Data;
 using WamBot.Twitch.Interactivity;
+using WamBot.Twitch.Services;
 
 namespace WamBot.Twitch
 {
@@ -79,7 +81,6 @@ namespace WamBot.Twitch
                 c.BaseAddress = new Uri("https://api.opentopodata.org/v1/"));
 
             services.AddDbContext<BotDbContext>(o => o.UseNpgsql(_configuration["Database:ConnectionString"]), ServiceLifetime.Transient);
-            
 
             services.AddSingleton((container) =>
             {
@@ -109,8 +110,9 @@ namespace WamBot.Twitch
                 return new LiveStreamMonitorService(api);
             });
 
-            services.AddParamConverter<User, TwitchUserConverter>();
-            
+            services.AddParamConverter<IUser, TwitchUserConverter>();
+            services.AddScoped<UserService>();
+
             services.AddSingleton<CommandRegistry>();
             services.AddHostedService<BotService>();
             services.AddHostedService<EconomyService>();
@@ -118,16 +120,13 @@ namespace WamBot.Twitch
         }
 
         public void Configure(
-            IApplicationBuilder app, 
-            IWebHostEnvironment env, 
+            IApplicationBuilder app,
+            IWebHostEnvironment env,
             BotDbContext dbContext)
         {
             dbContext.Database.Migrate();
 
-            app.UseForwardedHeaders(new ForwardedHeadersOptions
-            {
-                ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-            });
+            app.UseForwardedHeaders(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto });
 
             if (env.IsDevelopment())
             {

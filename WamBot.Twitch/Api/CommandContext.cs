@@ -16,20 +16,24 @@ namespace WamBot.Twitch.Api
     {
         private Lazy<InteractivityService> _interactivityLazy;
 
-        internal CommandContext(TwitchClient client, ChatMessage chatMessage, IServiceProvider services, string[] args)
+        internal CommandContext(TwitchClient client, ChatMessage chatMessage, IServiceProvider services, string[] args, string prefix)
         {
+            _interactivityLazy = new Lazy<InteractivityService>(() => ActivatorUtilities.CreateInstance<InteractivityService>(services, this));
+
             Client = client;
             Message = chatMessage;
             Arguments = args;
             Services = services;
-            _interactivityLazy = new Lazy<InteractivityService>(() => ActivatorUtilities.CreateInstance<InteractivityService>(services, this));
+            Prefix = prefix;
         }
 
         public TwitchClient Client { get; }
         public ChatMessage Message { get; }
+        public string Prefix { get; }
         public string[] Arguments { get; }
         public string Content => Message.Message;
         public IServiceProvider Services { get; }
+
         public InteractivityService Interactivity =>
             _interactivityLazy.Value;
 

@@ -12,17 +12,18 @@ using TwitchLib.Api.V5.Models.Users;
 using System.ComponentModel;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using WamBot.Twitch.Services;
+using TwitchLib.Api.Core.Interfaces;
 
 namespace WamBot.Twitch.Commands
 {
     [Group("Cock", "The most accurate penis sizing algorithm you will ever see.", "pp", "penis")]
     public class PenisCommands : CommandModule
     {
-        private readonly TwitchAPI _twitchApi;
         private readonly BotDbContext _database;
-        private readonly IParamConverter<User> _userConverter;
-        private readonly IMemoryCache _userCache;
         private readonly ILogger<PenisCommands> _logger;
+        private readonly UserService _userService;
+
         private static Random _random = new Random();
         private static readonly string[] _errorCodes = new[]
         {
@@ -56,24 +57,20 @@ namespace WamBot.Twitch.Commands
         };
 
         public PenisCommands(
-            IParamConverter<User> userConverter,
             BotDbContext database,
-            TwitchAPI twitchAPI,
-            IMemoryCache cache,
+            UserService userService,
             ILogger<PenisCommands> logger)
         {
-            _twitchApi = twitchAPI;
             _database = database;
-            _userConverter = userConverter;
-            _userCache = cache;
             _logger = logger;
+            _userService = userService;
         }
 
         [Default]
         [Command("Cock", "The most accurate penis sizing algorithm you will ever see.")]
         public async Task CockAsync(CommandContext ctx, string target = null)
         {
-            var user = await (target == null ? _database.GetOrCreateUserAsync(ctx.Message) : _database.GetOrCreateUserAsync(_twitchApi, target));
+            var user = await (target == null ? _userService.GetOrCreateUserAsync(ctx.Message) : _userService.GetOrCreateUserAsync(target));
 
             await SendPenisMessageAsync(ctx, user, target);
         }
@@ -120,7 +117,7 @@ namespace WamBot.Twitch.Commands
         [Command("Set Cock", "Set your cock type.", "set")]
         public async Task SetCockAsync(CommandContext ctx)
         {
-            var user = await _database.GetOrCreateUserAsync(ctx.Message);
+            var user = await _userService.GetOrCreateUserAsync(ctx.Message);
             if (user.PenisType == PenisType.Normal)
             {
                 user.PenisType = PenisType.Inverse;
@@ -142,9 +139,9 @@ namespace WamBot.Twitch.Commands
 
         [OwnerOnly]
         [Command("Admin Set Cock", null, "force")]
-        public async Task SetCockAsync(CommandContext ctx, User targetUser, PenisType type)
+        public async Task SetCockAsync(CommandContext ctx, IUser targetUser, PenisType type)
         {
-            var user = await _database.GetOrCreateUserAsync(targetUser);
+            var user = await _userService.GetOrCreateUserAsync(targetUser);
             user.PenisType = type;
 
             ctx.Reply($"Set {targetUser.Name}'s penis type to {type}");
@@ -155,7 +152,7 @@ namespace WamBot.Twitch.Commands
         [Command("Shuffle Cock", "Are you unhappy with your penis? For just W$100, shuffle it!", "shuffle")]
         public async Task ShuffleCockAsync(CommandContext ctx)
         {
-            var channelUser = await _database.GetOrCreateChannelUserAsync(_twitchApi, ctx.Message.Channel, ctx.Message.Username);
+            var channelUser = await _userService.GetOrCreateChannelUserAsync(ctx.Message.Channel, ctx.Message.Username);
             if (channelUser.Balance < 100.0m)
             {
                 ctx.Reply($"@{ctx.Message.DisplayName} You don't have enough money to shuffle your cock!");
@@ -164,10 +161,10 @@ namespace WamBot.Twitch.Commands
 
             channelUser.Balance -= 100;
 
-            var dbUser = await _database.GetOrCreateUserAsync(ctx.Message);
+            var dbUser = await _userService.GetOrCreateUserAsync(ctx.Message);
             dbUser.PenisOffset = _random.Next();
 
-            await SendPenisMessageAsync(ctx, dbUser, dbUser.Name);
+            await SendPenisMessageAsync(ctx, dbUser, ctx.Message.DisplayName);
             await _database.SaveChangesAsync();
         }
 
@@ -189,8 +186,7 @@ namespace WamBot.Twitch.Commands
                 return;
             }
 
-            var twitchUser = await GetUserForDbUserAsync(dbUser);
-
+            var twitchUser = await _userService.GetTwitchUserAsync(dbUser);
             if (twitchUser == null || dbUser.PenisType == PenisType.None)
             {
                 ctx.Reply($"Failed to calculate @{twitchUser?.DisplayName ?? name}'s penis size: {_errorCodes[_random.Next(_errorCodes.Length)]}.");
@@ -212,27 +208,6 @@ namespace WamBot.Twitch.Commands
                     ctx.Reply($"@{twitchUser.DisplayName}'s {_vaginaEuphemisms[_random.Next(_vaginaEuphemisms.Length)]} is {size:N0} {(size == 1 ? "inch" : "inches")} ({size * 2.5:N0}cm) deep! ){new string('=', (int)size)}8");
                     return;
             }
-        }
-
-        private async Task<User> GetUserForDbUserAsync(DbUser dbUser)
-        {
-            try
-            {
-                if (_userCache.TryGetValue($"User_{dbUser.Id}", out User user))
-                {
-                    return user;
-                }
-
-                user = await _twitchApi.V5.Users.GetUserByIDAsync(dbUser.Id.ToString());
-
-                return _userCache.Set($"User_{dbUser.Id}", user, DateTimeOffset.Now + TimeSpan.FromMinutes(10));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get Twitch User for {Id}", dbUser.Id);
-            }
-
-            return null;
         }
 
         private string FixCasing(string s)
@@ -258,7 +233,7 @@ namespace WamBot.Twitch.Commands
             }
             else
             {
-                var user = (User)await _userConverter.Convert(target, ctx);
+                var user = await _userService.GetTwitchUserAsync(target);
                 if (user != null)
                 {
                     userId = long.Parse(user.Id);
@@ -272,15 +247,7 @@ namespace WamBot.Twitch.Commands
                 }
             }
 
-            var dbUser = await _database.DbUsers.FindAsync(userName);
-            if (dbUser == null)
-            {
-                dbUser = new DbUser() { Name = userName, PenisType = isUser ? PenisType.Normal : PenisType.None, Id = userId };
-                if (isUser)
-                    _database.DbUsers.Add(dbUser);
-                await _database.SaveChangesAsync();
-            }
-
+            var dbUser = await _userService.GetOrCreateUserAsync(target);
             return (userId, dbUser, displayName, userName);
         }
 

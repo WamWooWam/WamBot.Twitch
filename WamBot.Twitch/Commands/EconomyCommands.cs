@@ -13,6 +13,8 @@ using TwitchLib.Client;
 using WamBot.Twitch.Api;
 using WamBot.Twitch.Data;
 using TwitchLib.Api.V5.Models.Users;
+using WamBot.Twitch.Services;
+using TwitchLib.Api.Core.Interfaces;
 
 namespace WamBot.Twitch.Commands
 {
@@ -22,30 +24,33 @@ namespace WamBot.Twitch.Commands
         private readonly ILogger<EconomyCommands> _logger;
         private readonly BotDbContext _dbContext;
         private readonly TwitchAPI _twitchAPI;
+        private readonly UserService _userService;
 
         public EconomyCommands(
             ILogger<EconomyCommands> logger,
             BotDbContext dbContext,
-            TwitchAPI twitchAPI)
+            TwitchAPI twitchAPI,
+            UserService userServce)
         {
             _logger = logger;
             _dbContext = dbContext;
             _twitchAPI = twitchAPI;
+            _userService = userServce;
         }
 
         [Command("Balance", "How much cash do you have?", "bal")]
         public async Task Balance(CommandContext ctx)
         {
-            var channelUser = await _dbContext.GetOrCreateChannelUserAsync(_twitchAPI, ctx.Message.Channel, ctx.Message.Username);
+            var channelUser = await _userService.GetOrCreateChannelUserAsync(ctx.Message.Channel, ctx.Message.Username);
             ctx.Reply($"@{ctx.Message.DisplayName} you have W${channelUser.Balance:N2}");
         }
 
-        [BlockChannels("imjhay_")]
+        [BlockChannels("imjhay_", WithPrefixes = new[] { "!" })]
         [Command("Duel", "Pit your WamCoin against another person in chat.", "duel")]
-        public async Task DuelAsync(CommandContext ctx, User user, decimal amount = 0)
+        public async Task DuelAsync(CommandContext ctx, IUser user, decimal amount = 0)
         {
-            var currentUser = await _dbContext.GetOrCreateChannelUserAsync(_twitchAPI, ctx.Message.Channel, ctx.Message.Username);
-            var otherUser = await _dbContext.GetOrCreateChannelUserAsync(_twitchAPI, ctx.Message.Channel, user.Name);
+            var currentUser = await _userService.GetOrCreateChannelUserAsync(ctx.Message.Channel, ctx.Message.Username);
+            var otherUser = await _userService.GetOrCreateChannelUserAsync(ctx.Message.Channel, user.Name);
 
             if (!EnsureBalance(ctx, currentUser, amount))
                 return;
@@ -72,26 +77,27 @@ namespace WamBot.Twitch.Commands
             winner.DbUser.IncrementConsecutiveWins();
             loser.DbUser.IncrementConsecutiveLosses();
 
-            ctx.Reply($"@{winner.UserName} has won the duel and now has {winner.Balance.FormatCash()} with {winner.DbUser.ConsecutiveWins} consecutive wins!");
+            var winnerTwitchUser = await _userService.GetTwitchUserAsync(winner.UserId);
+            ctx.Reply($"@{winnerTwitchUser} has won the duel and now has {winner.Balance.FormatCash()} with {winner.DbUser.ConsecutiveWins} consecutive wins!");
             await _dbContext.SaveChangesAsync();
         }
 
         [OwnerOnly]
         [Command("Cheat", "How much cash do you have?", "give", "cheat")]
-        public async Task CheatAsync(CommandContext ctx, decimal give, User user = null)
+        public async Task CheatAsync(CommandContext ctx, decimal give, IUser user = null)
         {
-            var channelUser = await _dbContext.GetOrCreateChannelUserAsync(_twitchAPI, ctx.Message.Channel, user?.Name ?? ctx.Message.Username);
+            var channelUser = await _userService.GetOrCreateChannelUserAsync(ctx.Message.Channel, user?.Name ?? ctx.Message.Username);
             channelUser.Balance += give;
 
             ctx.Reply($"@{user?.Name ?? ctx.Message.Username} you now have W${channelUser.Balance:N2}");
             await _dbContext.SaveChangesAsync();
         }
 
-        [BlockChannels("imjhay_")]
+        [BlockChannels("imjhay_", WithPrefixes = new[] { "!" })]
         [Command("Gamble", "Throw away your money because you're stupid :)")]
         public async Task GambleAsync(CommandContext ctx, string rawAmount)
         {
-            var channelUser = await _dbContext.GetOrCreateChannelUserAsync(_twitchAPI, ctx.Message.Channel, ctx.Message.Username);
+            var channelUser = await _userService.GetOrCreateChannelUserAsync(ctx.Message.Channel, ctx.Message.Username);
             if (channelUser.Balance == 0)
             {
                 ctx.Reply($"@{ctx.Message.DisplayName} you have no WamBux!");
@@ -128,7 +134,7 @@ namespace WamBot.Twitch.Commands
         {
             if (user.Balance < amount)
             {
-                ctx.Reply($"@{user.UserName} you'll need {amount.FormatCash()} to do that!");
+                ctx.Reply($"@{ctx.Message.DisplayName} you'll need {amount.FormatCash()} to do that!");
                 return false;
             }
 

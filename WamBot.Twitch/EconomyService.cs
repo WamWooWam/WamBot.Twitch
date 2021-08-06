@@ -18,6 +18,7 @@ using TwitchLib.Api.Services.Events.LiveStreamMonitor;
 using TwitchLib.Client;
 using TwitchLib.Client.Events;
 using WamBot.Twitch.Data;
+using WamBot.Twitch.Services;
 
 namespace WamBot.Twitch
 {
@@ -32,9 +33,7 @@ namespace WamBot.Twitch
             }
 
             public bool IsLive { get; set; }
-
             public DateTimeOffset StreamStarted { get; set; }
-
             public ConcurrentDictionary<string, ActiveUser> ActiveUsers { get; set; }
             public string StreamId { get; internal set; }
         }
@@ -49,6 +48,7 @@ namespace WamBot.Twitch
         private readonly IServiceProvider _services;
         private readonly TwitchAPI _twitchAPI;
         private readonly TwitchClient _twitchClient;
+        private readonly UserService _userService;
         private readonly LiveStreamMonitorService _liveStreamMonitor;
         private readonly ConcurrentDictionary<string, ChannelState> _channelStateStore;
         private readonly Timer _payoutTimer;
@@ -65,6 +65,7 @@ namespace WamBot.Twitch
             IServiceProvider services,
             TwitchClient twitchClient,
             TwitchAPI twitchAPI,
+            UserService userService,
             LiveStreamMonitorService liveStreamMonitor)
         {
             _logger = logger;
@@ -72,6 +73,7 @@ namespace WamBot.Twitch
             _twitchAPI = twitchAPI;
             _twitchClient = twitchClient;
             _liveStreamMonitor = liveStreamMonitor;
+            _userService = userService;
 
             _taskQueue = new ConcurrentQueue<Func<Task>>();
             _channelStateStore = new ConcurrentDictionary<string, ChannelState>();
@@ -123,7 +125,7 @@ namespace WamBot.Twitch
             var channelState = GetChannelState(e.Channel);
             foreach (var user in e.Users)
             {
-                var dbUser = await dbContext.GetOrCreateChannelUserAsync(_twitchAPI, e.Channel, user);
+                var dbUser = await _userService.GetOrCreateChannelUserAsync(e.Channel, user);
                 if (channelState.StreamId != null && dbUser.LastStreamId != channelState.StreamId)
                 {
                     dbUser.Balance += TUNE_IN_BONUS;
@@ -147,7 +149,7 @@ namespace WamBot.Twitch
             using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
 
             var channelState = GetChannelState(e.Channel);
-            var dbUser = await dbContext.GetOrCreateChannelUserAsync(_twitchAPI, e.Channel, e.Username);
+            var dbUser = await _userService.GetOrCreateChannelUserAsync(e.Channel, e.Username);
             if (channelState.StreamId != null && dbUser.LastStreamId != channelState.StreamId)
             {
                 dbUser.Balance += TUNE_IN_BONUS;
@@ -191,7 +193,7 @@ namespace WamBot.Twitch
                     
                     j++;
 
-                    var dbUser = await dbContext.GetOrCreateChannelUserAsync(_twitchAPI, state.Key, user.Key, false);
+                    var dbUser = await _userService.GetOrCreateChannelUserAsync(state.Key, user.Key, false);
                     if (dbUser != null && dbUser.LastStreamId == state.Value.StreamId)
                     {
                         dbUser.Balance += PER_TICK_BONUS;

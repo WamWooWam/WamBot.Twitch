@@ -114,6 +114,14 @@ namespace WamBot.Twitch
             yield return str.Substring(nextPiece);
         }
 
+        public static IEnumerable<List<T>> Split<T>(this List<T> list, int size = 30)
+        {
+            for (int i = 0; i < list.Count; i += size)
+            {
+                yield return list.GetRange(i, Math.Min(size, list.Count - i));
+            }
+        }
+
         public static string TrimMatchingQuotes(this string input)
         {
             if ((input.Length >= 2) && (_quotes.Contains(input[0])) && (_quotes.Contains(input[input.Length - 1])))

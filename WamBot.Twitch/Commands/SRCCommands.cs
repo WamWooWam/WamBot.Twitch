@@ -71,16 +71,16 @@ namespace WamBot.Twitch.Commands
             var players = run.Players.Select(p => GetPlayerUsername(p, leaderboard.Players.Data)).ToArray();
             var playerString = players.Length == 1 ? players[0] : (string.Join(", ", players[..^1]) + " & " + players[^1]);
             var video = run.Videos?.Links.FirstOrDefault()?.Uri;
-            var videoUrl = $"({FilterVideoUrl(video)})";
+            var videoUrl = FilterVideoUrl(video);
 
             ctx.Reply($"{srcGame.Names.International} - {srcCategory.Name} {variablesString} world record is {time:g} by {playerString} {videoUrl}");
         }
 
         private static string FilterVideoUrl(Uri video)
         {
-            var videoUrl = "";
             if (video != null)
             {
+                var videoUrl = "";
                 var query = QueryHelpers.ParseQuery(video.Query.TrimStart('?'));
                 if (video.Host == "youtube.com" || video.Host == "www.youtube.com")
                 {
@@ -92,9 +92,11 @@ namespace WamBot.Twitch.Commands
                 {
                     videoUrl = video.ToString();
                 }
+
+                return $"({videoUrl})";
             }
 
-            return videoUrl;
+            return null;
         }
 
         [Command("Variables", "Pulls the variables for a given game and category from Speedrun.com.")]
@@ -151,7 +153,7 @@ namespace WamBot.Twitch.Commands
             var run = runs[index]["run"];
             var time = TimeSpan.FromSeconds(run["times"]["primary_t"].ToObject<double>());
 
-            string playerName = await GetRunPlayserNameAsync(httpClient, run);
+            string playerName = await GetRunPlayerNameAsync(httpClient, run);
 
             ctx.Reply($"any% WR is {time:g} by {playerName}");
         }
@@ -247,7 +249,7 @@ namespace WamBot.Twitch.Commands
             return player.Name;
         }
 
-        private static async Task<string> GetRunPlayserNameAsync(HttpClient httpClient, JToken run)
+        private static async Task<string> GetRunPlayerNameAsync(HttpClient httpClient, JToken run)
         {
             var playerName = "";
             var player = (JObject)(run["players"] as JArray)[0];

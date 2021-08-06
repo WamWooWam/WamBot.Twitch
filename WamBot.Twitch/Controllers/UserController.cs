@@ -66,9 +66,9 @@ namespace WamBot.Twitch.Controllers
         }
 
         // GET: User/Details/5
-        public async Task<IActionResult> Details(string id)
+        public async Task<IActionResult> Details(long id)
         {
-            if (id == null)
+            if (id == 0)
             {
                 return NotFound();
             }
@@ -76,7 +76,7 @@ namespace WamBot.Twitch.Controllers
             var dbUser = await _context.DbUsers
                 .Include(d => d.DbChannelUsers)
                 .ThenInclude(d => d.DbChannel)
-                .FirstOrDefaultAsync(m => m.Name == id);
+                .FirstOrDefaultAsync(m => m.Id == id);
             if (dbUser == null)
             {
                 return NotFound();
@@ -87,9 +87,9 @@ namespace WamBot.Twitch.Controllers
         }
 
         // GET: User/Edit/5
-        public async Task<IActionResult> Edit(string id)
+        public async Task<IActionResult> Edit(long id)
         {
-            if (id == null)
+            if (id == 0)
             {
                 return NotFound();
             }
@@ -107,9 +107,9 @@ namespace WamBot.Twitch.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(string id, [Bind("Name,OnyxPoints,PenisOffset,PenisType")] DbUser dbUser)
+        public async Task<IActionResult> Edit(long id, [Bind("Name,OnyxPoints,PenisOffset,PenisType")] DbUser dbUser)
         {
-            if (id != dbUser.Name)
+            if (id != dbUser.Id)
             {
                 return NotFound();
             }
@@ -123,7 +123,7 @@ namespace WamBot.Twitch.Controllers
                 }
                 catch (DbUpdateConcurrencyException)
                 {
-                    if (!DbUserExists(dbUser.Name))
+                    if (!DbUserExists(dbUser.Id))
                     {
                         return NotFound();
                     }
@@ -138,15 +138,15 @@ namespace WamBot.Twitch.Controllers
         }
 
         // GET: User/Delete/5
-        public async Task<IActionResult> Delete(string id)
+        public async Task<IActionResult> Delete(long id)
         {
-            if (id == null)
+            if (id == 0)
             {
                 return NotFound();
             }
 
             var dbUser = await _context.DbUsers
-                .FirstOrDefaultAsync(m => m.Name == id);
+                .FirstOrDefaultAsync(m => m.Id == id);
             if (dbUser == null)
             {
                 return NotFound();
@@ -158,7 +158,7 @@ namespace WamBot.Twitch.Controllers
         // POST: User/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> DeleteConfirmed(string id)
+        public async Task<IActionResult> DeleteConfirmed(long id)
         {
             var dbUser = await _context.DbUsers.FindAsync(id);
             _context.DbUsers.Remove(dbUser);
@@ -166,9 +166,9 @@ namespace WamBot.Twitch.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        private bool DbUserExists(string id)
+        private bool DbUserExists(long id)
         {
-            return _context.DbUsers.Any(e => e.Name == id);
+            return _context.DbUsers.Any(e => e.Id == id);
         }
     }
 }

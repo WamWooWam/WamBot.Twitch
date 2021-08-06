@@ -6,11 +6,12 @@ using System.Linq;
 
 namespace WamBot.Twitch.Data
 {
+    [Index(nameof(Name))]
     public class DbUser
     {
+        [Key]
         public long Id { get; set; }
 
-        [Key]
         public string Name { get; set; }
 
         public long OnyxPoints { get; set; } = 0;

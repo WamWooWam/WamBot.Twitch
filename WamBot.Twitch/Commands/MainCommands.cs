@@ -11,11 +11,13 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using TwitchLib.Api;
+using TwitchLib.Api.Core.Interfaces;
 using TwitchLib.Api.Core.RateLimiter;
 using TwitchLib.Api.Services;
 using TwitchLib.Api.V5.Models.Users;
 using WamBot.Twitch.Api;
 using WamBot.Twitch.Data;
+using WamBot.Twitch.Services;
 
 namespace WamBot.Twitch.Commands
 {
@@ -27,17 +29,17 @@ namespace WamBot.Twitch.Commands
         private readonly CommandRegistry _commandRegistry;
         private readonly LiveStreamMonitorService _liveStreamMonitor;
         private readonly IHttpClientFactory _factory;
-        private readonly IParamConverter<User> _userConverter;
+        private readonly UserService _userService;
 
         private static RandomList<string> _pickupLines;
         private static Random _random = new Random();
 
         public MainCommands(
             IHttpClientFactory factory,
-            IParamConverter<User> userConverter,
             CommandRegistry commandRegistry,
             BotDbContext database,
             TwitchAPI twitchAPI,
+            UserService userService,
             LiveStreamMonitorService liveStreamMonitor)
         {
             _factory = factory;
@@ -45,7 +47,7 @@ namespace WamBot.Twitch.Commands
             _database = database;
             _commandRegistry = commandRegistry;
             _liveStreamMonitor = liveStreamMonitor;
-            _userConverter = userConverter;
+            _userService = userService;
         }
 
         [Command("Ping", "Pong!")]
@@ -58,19 +60,20 @@ namespace WamBot.Twitch.Commands
         [Command("Add", "Adds WamBot to your chat!")]
         public async Task AddAsync(CommandContext ctx)
         {
-            var dbChannel = await _database.DbChannels.FindAsync(ctx.Message.Username);
+            var dbChannel = await _database.DbChannels.FindAsync(long.Parse(ctx.Message.UserId));
             if (dbChannel != null)
             {
                 ctx.Reply("I'm already in your chat! Use !remove to remove me.");
                 return;
             }
 
-            dbChannel = new DbChannel() { Name = ctx.Message.Username };
+            dbChannel = new DbChannel() { Id = long.Parse(ctx.Message.UserId), Name = ctx.Message.Username };
             _database.DbChannels.Add(dbChannel);
             await _database.SaveChangesAsync();
 
-            _liveStreamMonitor.ChannelsToMonitor.Add(dbChannel.Name);
-            ctx.Client.JoinChannel(dbChannel.Name);
+            _liveStreamMonitor.ChannelsToMonitor.Add(ctx.Message.Username);
+
+            ctx.Client.JoinChannel(ctx.Message.Username);
             ctx.Reply("WamBot has been added to your chat!");
         }
 
@@ -78,18 +81,18 @@ namespace WamBot.Twitch.Commands
         [Command("Remove", "Removes WamBot from your chat!")]
         public async Task RemoveAsync(CommandContext ctx)
         {
-            var dbChannel = await _database.DbChannels.FindAsync(ctx.Message.Username);
+            var dbChannel = await _database.DbChannels.FindAsync(long.Parse(ctx.Message.UserId));
             if (dbChannel == null)
             {
                 ctx.Reply("I'm not in your chat! Use !add to add me.");
                 return;
             }
 
-            _liveStreamMonitor.ChannelsToMonitor.Remove(dbChannel.Name);
+            _liveStreamMonitor.ChannelsToMonitor.Remove(ctx.Message.Username);
             _database.DbChannels.Remove(dbChannel);
             await _database.SaveChangesAsync();
 
-            ctx.Client.LeaveChannel(dbChannel.Name);
+            ctx.Client.LeaveChannel(ctx.Message.Username);
             ctx.Reply("WamBot has been removed from your chat!");
         }
 
@@ -162,7 +165,7 @@ namespace WamBot.Twitch.Commands
             var games = new string[] { "Raid: Shadow Legends", "Diner Dash", "Golf Clash", "Royal Casino", "Toon Blast", "Vikings: War of Clans", "Clash of Clans", "Fruit Ninja", "Angry Birds" };
             var links = new string[] { "https://bit.ly/3b9sOBX", "https://bit.ly/33JmJI3", "https://bit.ly/3bTpBFS", "https://bit.ly/3qhwo18", "https://bit.ly/3eOzHdZ", "https://bit.ly/3y7DWc9", "https://bit.ly/3eMW96Y" };
 
-            var user = await _database.GetOrCreateUserAsync(ctx.Message);
+            var user = await _userService.GetOrCreateUserAsync(ctx.Message);
             var onyx = Math.Max(1, Math.Floor(Math.Abs(_random.RandomBiasedPow(0, 256, 128, 128) - 128)));
             user.OnyxPoints += (int)onyx;
 
@@ -183,7 +186,7 @@ namespace WamBot.Twitch.Commands
 
         [Cooldown(15, PerUser = true)]
         [Command("Pickup Line", "Select a random pickup line!", "pickup", "pickupline")]
-        public void PickupLine(CommandContext ctx, User user = null)
+        public void PickupLine(CommandContext ctx, IUser user = null)
         {
             if (_pickupLines == null)
                 _pickupLines = new RandomList<string>(File.ReadAllLines(Path.Join(Directory.GetCurrentDirectory(), "pickup-lines.txt")));
@@ -213,7 +216,7 @@ namespace WamBot.Twitch.Commands
         // https://www.freemaptools.com/ajax/elevation-service.php?lat=21.36728&lng=9.77824
         [Cooldown(120)]
         [Command("Location", "Totally where I live wdym.", "location", "loc")]
-        public async Task LocationAsync(CommandContext ctx, User user = null)
+        public async Task LocationAsync(CommandContext ctx, IUser user = null)
         {
             var client = _factory.CreateClient("OpenElevation");
 

@@ -24,22 +24,22 @@ namespace WamBot.Twitch.Controllers
             var channels = await _context.DbChannels.ToListAsync();
             foreach (var channel in channels)
             {
-                channel.TotalUsers = await _context.DbChannelUsers.CountAsync(c => c.ChannelName == channel.Name);
+                channel.TotalUsers = await _context.DbChannelUsers.CountAsync(c => c.ChannelId == channel.Id);
             }
 
             return View(channels);
         }
 
         // GET: Channels/Details/5
-        public async Task<IActionResult> Details(string id)
+        public async Task<IActionResult> Details(long id)
         {
-            if (id == null)
+            if (id == 0)
             {
                 return NotFound();
             }
 
             var dbChannel = await _context.DbChannels
-                .FirstOrDefaultAsync(m => m.Name == id);
+                .FirstOrDefaultAsync(m => m.Id == id);
             if (dbChannel == null)
             {
                 return NotFound();
@@ -49,9 +49,9 @@ namespace WamBot.Twitch.Controllers
         }
 
         // GET: Channels/Edit/5
-        public async Task<IActionResult> Edit(string id)
+        public async Task<IActionResult> Edit(long id)
         {
-            if (id == null)
+            if (id == 0)
             {
                 return NotFound();
             }
@@ -69,9 +69,9 @@ namespace WamBot.Twitch.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(string id, [Bind("Name,LastStreamId")] DbChannel dbChannel)
+        public async Task<IActionResult> Edit(long id, [Bind("Name,LastStreamId")] DbChannel dbChannel)
         {
-            if (id != dbChannel.Name)
+            if (id != dbChannel.Id)
             {
                 return NotFound();
             }
@@ -85,7 +85,7 @@ namespace WamBot.Twitch.Controllers
                 }
                 catch (DbUpdateConcurrencyException)
                 {
-                    if (!DbChannelExists(dbChannel.Name))
+                    if (!DbChannelExists(dbChannel.Id))
                     {
                         return NotFound();
                     }
@@ -100,15 +100,15 @@ namespace WamBot.Twitch.Controllers
         }
 
         // GET: Channels/Delete/5
-        public async Task<IActionResult> Delete(string id)
+        public async Task<IActionResult> Delete(long id)
         {
-            if (id == null)
+            if (id == 0)
             {
                 return NotFound();
             }
 
             var dbChannel = await _context.DbChannels
-                .FirstOrDefaultAsync(m => m.Name == id);
+                .FirstOrDefaultAsync(m => m.Id == id);
             if (dbChannel == null)
             {
                 return NotFound();
@@ -120,7 +120,7 @@ namespace WamBot.Twitch.Controllers
         // POST: Channels/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> DeleteConfirmed(string id)
+        public async Task<IActionResult> DeleteConfirmed(long id)
         {
             var dbChannel = await _context.DbChannels.FindAsync(id);
             _context.DbChannels.Remove(dbChannel);
@@ -128,9 +128,9 @@ namespace WamBot.Twitch.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        private bool DbChannelExists(string id)
+        private bool DbChannelExists(long id)
         {
-            return _context.DbChannels.Any(e => e.Name == id);
+            return _context.DbChannels.Any(e => e.Id == id);
         }
     }
 }

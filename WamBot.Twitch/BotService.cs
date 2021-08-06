@@ -17,6 +17,7 @@ using WamBot.Twitch.Api;
 using WamBot.Twitch.Data;
 using TwitchLib.Api;
 using System.Diagnostics;
+using WamBot.Twitch.Services;
 
 namespace WamBot.Twitch
 {
@@ -28,9 +29,11 @@ namespace WamBot.Twitch
         private readonly TwitchClient _client;
         private readonly CommandRegistry _registry;
         private readonly LiveStreamMonitorService _monitorService;
-        private readonly string _prefix = "!";
         private readonly TwitchAPI _api;
         private bool _stop;
+
+
+        private readonly string[] _prefixes = new[] { "!", "w;" };
 
         public BotService(
             TwitchAPI api,
@@ -43,7 +46,10 @@ namespace WamBot.Twitch
         {
             _services = services;
             _configuration = configuration;
-            _prefix = configuration["Twitch:Prefix"] ?? _prefix;
+
+            var prefixes = configuration["Twitch:Prefix"];
+            if (!string.IsNullOrWhiteSpace(prefixes))
+                _prefixes = prefixes.Split(' ');
 
             _api = api;
             _logger = logger;
@@ -69,7 +75,7 @@ namespace WamBot.Twitch
             _client.AutoReListenOnException = true;
             _client.OnConnected += OnConnected;
             _client.OnDisconnected += OnDisconnected;
-            _client.OnReconnected += OnReconnected; ;
+            _client.OnReconnected += OnReconnected; 
             _client.OnMessageReceived += OnMessage;
             _client.OnJoinedChannel += OnJoinedChannel;
             _client.OnLeftChannel += OnLeftChannel;
@@ -82,11 +88,71 @@ namespace WamBot.Twitch
             using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
             await dbContext.Database.MigrateAsync();
 
-            var channels = await dbContext.DbChannels.Select(c => c.Name).ToListAsync();
-            channels.Add("wambot_");
+            await RefreshUsers(dbContext);
+            await RefreshChannels(dbContext);
+
+            await dbContext.SaveChangesAsync();
+
+            var channels = new List<string> { "wambot_" };
+            var userService = scope.ServiceProvider.GetRequiredService<UserService>();
+            foreach (var channel in await dbContext.DbChannels.ToListAsync())
+            {
+                var user = await userService.GetTwitchUserAsync(channel.Id);
+                channels.Add(user.Name);
+            }
 
             _monitorService.SetChannelsByName(channels);
             _monitorService.Start();
+        }
+
+        private async Task RefreshUsers(BotDbContext dbContext)
+        {
+            var i = 0;
+            var users = await dbContext.DbUsers.ToListAsync();
+            foreach (var userGroup in users.Split(100))
+            {
+                var userResponse = (await _api.Helix.Users.GetUsersAsync(ids: userGroup.Select(u => u.Id.ToString()).ToList())).Users;
+                foreach (var user in userGroup)
+                {
+                    var twitchUser = userResponse.FirstOrDefault(u => u.Id == user.Id.ToString());
+                    if (twitchUser == null)
+                    {
+                        i++;
+                        dbContext.DbUsers.Remove(user);
+                        dbContext.DbChannelUsers.RemoveRange(dbContext.DbChannelUsers.Where(u => u.UserId == user.Id));
+                        continue;
+                    }
+
+                    user.Name = twitchUser.Login;
+                }
+            }
+
+            _logger.Log(LogLevel.Information, "Removed {Count} dead users!", i);
+        }
+
+        private async Task RefreshChannels(BotDbContext dbContext)
+        {
+            var i = 0;
+            var channels = await dbContext.DbChannels.ToListAsync();
+            foreach (var channelGroup in channels.Split(100))
+            {
+                var channelResponse = (await _api.Helix.Users.GetUsersAsync(ids: channelGroup.Select(u => u.Id.ToString()).ToList())).Users;
+                foreach (var channel in channelGroup)
+                {
+                    var twitchUser = channelResponse.FirstOrDefault(u => u.Id == channel.Id.ToString());
+                    if (twitchUser == null)
+                    {
+                        i++;
+                        dbContext.DbChannels.Remove(channel);
+                        dbContext.DbChannelUsers.RemoveRange(dbContext.DbChannelUsers.Where(u => u.ChannelId == channel.Id));
+                        continue;
+                    }
+
+                    channel.Name = twitchUser.Login;
+                }
+            }
+
+            _logger.Log(LogLevel.Information, "Removed {Count} dead channels!", i);
         }
 
         private void OnJoinedChannel(object sender, OnJoinedChannelArgs e)
@@ -101,15 +167,27 @@ namespace WamBot.Twitch
 
         private void OnMessage(object sender, OnMessageReceivedArgs e)
         {
-            if (e.ChatMessage.IsMe || !e.ChatMessage.Message.StartsWith(_prefix))
+            if (e.ChatMessage.IsMe)
                 return;
 
+            string prefix = null;
+            foreach (var item in _prefixes)
+            {
+                if (e.ChatMessage.Message.StartsWith(item))
+                {
+                    prefix = item;
+                    break;
+                }
+            }
+
+            if (prefix == null) return;
+
             var timestamp = Stopwatch.GetTimestamp();
-            var message = e.ChatMessage.Message.Substring(_prefix.Length);
+            var message = e.ChatMessage.Message.Substring(prefix.Length);
             if (!_registry.Lookup(message, out var command, out var args))
                 return;
 
-            var ctx = new CommandContext(_client, e.ChatMessage, _services, args);
+            var ctx = new CommandContext(_client, e.ChatMessage, _services, args, prefix);
             _ = Task.Run(async () =>
             {
                 try
@@ -124,17 +202,20 @@ namespace WamBot.Twitch
             });
         }
 
-        private void OnConnected(object sender, OnConnectedArgs e)
+        private async void OnConnected(object sender, OnConnectedArgs e)
         {
             _logger.LogInformation("Connected to Twitch as {Username}", e.BotUsername);
             _client.JoinChannel(e.BotUsername);
 
             using var scope = _services.CreateScope();
             using var database = scope.ServiceProvider.GetRequiredService<BotDbContext>();
+            var userService = scope.ServiceProvider.GetRequiredService<UserService>();
             foreach (var channel in database.DbChannels)
             {
-                _logger.LogDebug("Joining {Channel}", channel.Name);
-                _client.JoinChannel(channel.Name);
+                var user = await userService.GetTwitchUserAsync(channel.Id);
+
+                _logger.LogDebug("Joining {Channel}", user.Name);
+                _client.JoinChannel(user.Name);
             }
         }
 

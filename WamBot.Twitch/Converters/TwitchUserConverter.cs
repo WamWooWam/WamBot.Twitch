@@ -6,31 +6,29 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using TwitchLib.Api;
+using TwitchLib.Api.Core.Interfaces;
 using TwitchLib.Api.V5.Models.Users;
 using WamBot.Twitch.Api;
+using WamBot.Twitch.Services;
 
 namespace WamBot.Twitch.Converters
 {
-    public class TwitchUserConverter : IParamConverter<User>
+    public class TwitchUserConverter : IParamConverter<IUser>
     {
         static Regex UserRegex = new Regex("^([#@])?[a-zA-Z0-9][\\w]{2,24}$", RegexOptions.Compiled | RegexOptions.ECMAScript);
 
-        private readonly TwitchAPI _api;
-        public TwitchUserConverter(TwitchAPI api)
+        private readonly UserService _userService;
+        public TwitchUserConverter(UserService api)
         {
-            _api = api;
+            _userService = api;
         }
 
         public async Task<object> Convert(string arg, CommandContext context)
         {
-            arg = arg.TrimStart('@');
             if (!string.IsNullOrWhiteSpace(arg) && UserRegex.IsMatch(arg))
             {
-                var users = await _api.V5.Users.GetUserByNameAsync(arg);
-                if (users.Matches.Length > 0)
-                {
-                    return users.Matches[0];
-                }
+                arg = arg.TrimStart('@');
+                return await _userService.GetTwitchUserAsync(arg);
             }
 
             return null;

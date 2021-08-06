@@ -30,17 +30,17 @@ namespace WamBot.Twitch.Data
                 .HasAlternateKey(u => u.Id);
 
             modelBuilder.Entity<DbChannelUser>()
-                .HasKey(c => new { c.UserName, c.ChannelName });
+                .HasKey(c => new { c.UserId, c.ChannelId });
 
             modelBuilder.Entity<DbChannelUser>()
                 .HasOne(u => u.DbChannel)
                 .WithMany(c => c.DbChannelUsers)
-                .HasForeignKey(u => u.ChannelName);
+                .HasForeignKey(u => u.ChannelId);
 
             modelBuilder.Entity<DbChannelUser>()
                 .HasOne(u => u.DbUser)
                 .WithMany(c => c.DbChannelUsers)
-                .HasForeignKey(u => u.UserName);
+                .HasForeignKey(u => u.UserId);
 
             modelBuilder.HasCollation("twitch_name", "en-u-ks-primary", "icu", false);
 
@@ -52,13 +52,13 @@ namespace WamBot.Twitch.Data
                         .Property(u => u.Name)
                         .UseCollation("twitch_name");
 
-            modelBuilder.Entity<DbChannelUser>()
-                        .Property(u => u.UserName)
-                        .UseCollation("twitch_name");
+            //modelBuilder.Entity<DbChannelUser>()
+            //            .Property(u => u.UserName)
+            //            .UseCollation("twitch_name");
 
-            modelBuilder.Entity<DbChannelUser>()
-                        .Property(u => u.ChannelName)
-                        .UseCollation("twitch_name");
+            //modelBuilder.Entity<DbChannelUser>()
+            //            .Property(u => u.ChannelName)
+            //            .UseCollation("twitch_name");
         }
 
         public DbSet<DbUser> DbUsers { get; set; }

@@ -25,7 +25,6 @@ namespace WamBot.Twitch
         private TwitchClient _twitchClient;
         private LiveStreamMonitorService _liveStreamMonitor;
         private ConcurrentDictionary<string, Stream> _welcomeMessageQueue;
-
         private RandomList<string> _welcomeLines;
 
         public WelcomeService(
@@ -72,10 +71,10 @@ namespace WamBot.Twitch
                 using var scope = _services.CreateScope();
                 using var db = scope.ServiceProvider.GetRequiredService<BotDbContext>();
 
-                var dbChannel = db.DbChannels.Find(e.Channel);
+                var dbChannel = db.DbChannels.Find(long.Parse(e.Stream.UserId));
                 if (dbChannel == null)
                 {
-                    dbChannel = new DbChannel() { Name = e.Channel };
+                    dbChannel = new DbChannel() { Name = e.Channel, Id = long.Parse(e.Stream.UserId) };
                     db.DbChannels.Add(dbChannel);
                 }
 
