@@ -223,7 +223,6 @@ namespace WamBot.Twitch.Commands
             var userId = 0L;
             var displayName = target;
             var userName = target;
-            var isUser = true;
 
             if (string.IsNullOrWhiteSpace(target))
             {
@@ -243,7 +242,6 @@ namespace WamBot.Twitch.Commands
                 else
                 {
                     userId = target.GetHashCode();
-                    isUser = false;
                 }
             }
 

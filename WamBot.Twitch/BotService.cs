@@ -88,13 +88,13 @@ namespace WamBot.Twitch
             using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
             await dbContext.Database.MigrateAsync();
 
-            await RefreshUsers(dbContext);
+            //await RefreshUsers(dbContext);
             await RefreshChannels(dbContext);
 
             await dbContext.SaveChangesAsync();
 
             var channels = new List<string> { "wambot_" };
-            var userService = scope.ServiceProvider.GetRequiredService<UserService>();
+            using var userService = scope.ServiceProvider.GetRequiredService<UserService>();
             foreach (var channel in await dbContext.DbChannels.ToListAsync())
             {
                 var user = await userService.GetTwitchUserAsync(channel.Id);
@@ -209,7 +209,7 @@ namespace WamBot.Twitch
 
             using var scope = _services.CreateScope();
             using var database = scope.ServiceProvider.GetRequiredService<BotDbContext>();
-            var userService = scope.ServiceProvider.GetRequiredService<UserService>();
+            using var userService = scope.ServiceProvider.GetRequiredService<UserService>();
             foreach (var channel in database.DbChannels)
             {
                 var user = await userService.GetTwitchUserAsync(channel.Id);

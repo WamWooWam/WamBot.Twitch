@@ -11,11 +11,10 @@ using WamBot.Twitch.Data;
 using Microsoft.EntityFrameworkCore;
 using TwitchLib.Api;
 using TwitchLib.Client.Models;
-using TwitchLib.Api.Helix.Models.Users.GetUsers;
 
 namespace WamBot.Twitch.Services
 {
-    public class UserService
+    public class UserService : IDisposable
     {
         private readonly ITwitchAPI _twitchApi;
         private readonly IMemoryCache _userCache;
@@ -84,6 +83,84 @@ namespace WamBot.Twitch.Services
             return null;
         }
 
+        public async IAsyncEnumerable<(string, DbChannelUser)> GetOrCreateChannelUsersAsync(string channelName, IEnumerable<string> userNames)
+        {
+            var channel = await GetTwitchUserAsync(channelName);
+            var usersToFetch = new List<string>();
+
+            var channelId = long.Parse(channel.Id);
+            var dbChannel = _database.DbChannels.Find(channelId);
+            if (dbChannel == null)
+            {
+                dbChannel = new DbChannel() { Id = channelId, Name = channel.Name };
+                _database.DbChannels.Add(dbChannel);
+            }
+
+            foreach (var userName in userNames)
+            {
+                if (_userCache.TryGetValue($"UserName_{userName}", out IUser user))
+                {
+                    var userId = long.Parse(user.Id);
+                    var result = await _database.DbChannelUsers.FirstOrDefaultAsync(u => u.ChannelId == channelId && u.UserId == userId);
+                    if (result == null)
+                    {
+                        result = new DbChannelUser() { UserId = userId, ChannelId = dbChannel.Id, Balance = 0 };
+                        _database.DbChannelUsers.Add(result);
+                    }
+
+                    yield return (userName, result);
+                }
+                else
+                {
+                    usersToFetch.Add(userName);
+                }
+            }
+
+            foreach (var userNameGroup in usersToFetch.Split(100))
+            {
+                var users = await _twitchApi.V5.Users.GetUsersByNameAsync(userNameGroup);
+                foreach (var userName in userNameGroup)
+                {
+                    var user = users.Matches.FirstOrDefault(u => u.Name == userName);
+                    if (user == null) continue;
+
+                    _userCache.Set($"UserName_{user.Name.ToLowerInvariant()}", user, DateTimeOffset.Now + TimeSpan.FromMinutes(10));
+                    _userCache.Set($"User_{user.Id}", user, DateTimeOffset.Now + TimeSpan.FromMinutes(10));
+
+                    var userId = long.Parse(user.Id);
+                    var result = await _database.DbChannelUsers.FirstOrDefaultAsync(u => u.ChannelId == channelId && u.UserId == userId);
+                    if (result == null)
+                    {
+                        result = new DbChannelUser() { UserId = userId, ChannelId = dbChannel.Id, Balance = 0 };
+                        _database.DbChannelUsers.Add(result);
+                    }
+
+                    yield return (userName, result);
+                }
+            }
+        }
+
+        public async Task<DbChannelUser> GetChannelUserAsync(string channel, string userName, long userId)
+        {
+            var channelUser = await GetTwitchUserAsync(channel);
+            var channelId = long.Parse(channelUser.Id);
+
+            var dbUser = await _database.DbUsers.FirstOrDefaultAsync(u => u.Id == userId);
+            if (dbUser == null)
+            {
+                dbUser = new DbUser() { Id = userId, Name = userName };
+                _database.DbUsers.Add(dbUser);
+            }
+
+            var result = await _database.DbChannelUsers.FirstOrDefaultAsync(u => u.ChannelId == channelId && u.UserId == userId);
+            if (result == null)
+            {
+                result = new DbChannelUser() { UserId = userId, ChannelId = channelId, Balance = 0 };
+                _database.DbChannelUsers.Add(result);
+            }
+
+            return result;
+        }
 
         public async Task<DbChannelUser> GetOrCreateChannelUserAsync(string channel, string username, bool ensurePopulated = true)
         {
@@ -99,6 +176,14 @@ namespace WamBot.Twitch.Services
             if (!ensurePopulated)
                 return await _database.DbChannelUsers.FirstOrDefaultAsync(u => u.ChannelId == channelId && u.UserId == userId);
 
+            var dbChannel = _database.DbChannels.Find(channelId);
+            if (dbChannel == null)
+            {
+                dbChannel = new DbChannel() { Id = channelId, Name = channelUser.Name };
+                _database.DbChannels.Add(dbChannel);
+            }
+
+
             var user = await _database.DbChannelUsers.Include(u => u.DbUser)
                                                      .Include(u => u.DbChannel)
                                                      .FirstOrDefaultAsync(u => u.ChannelId == channelId && u.UserId == userId);
@@ -107,13 +192,6 @@ namespace WamBot.Twitch.Services
                 return user;
 
             var dbUser = await this.GetOrCreateUserAsync(usernameUser);
-            var dbChannel = _database.DbChannels.Find(channelId);
-            if (dbChannel == null)
-            {
-                dbChannel = new DbChannel() { Id = channelId, Name = channelUser.Name };
-                _database.DbChannels.Add(dbChannel);
-            }
-
             user = new DbChannelUser() { UserId = dbUser.Id, ChannelId = dbChannel.Id, Balance = 0, DbUser = dbUser, DbChannel = dbChannel };
             _database.DbChannelUsers.Add(user);
 
@@ -158,6 +236,11 @@ namespace WamBot.Twitch.Services
             }
 
             return dbUser;
+        }
+
+        public void Dispose()
+        {
+            _database.SaveChanges();
         }
     }
 }

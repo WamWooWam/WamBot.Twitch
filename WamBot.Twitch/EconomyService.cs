@@ -40,6 +40,7 @@ namespace WamBot.Twitch
 
         private class ActiveUser
         {
+            public long Id { get; set; }
             public bool IsActive { get; set; }
             public DateTimeOffset LastSeen { get; set; }
         }
@@ -48,14 +49,15 @@ namespace WamBot.Twitch
         private readonly IServiceProvider _services;
         private readonly TwitchAPI _twitchAPI;
         private readonly TwitchClient _twitchClient;
-        private readonly UserService _userService;
         private readonly LiveStreamMonitorService _liveStreamMonitor;
         private readonly ConcurrentDictionary<string, ChannelState> _channelStateStore;
-        private readonly Timer _payoutTimer;
 
         private readonly ConcurrentQueue<Func<Task>> _taskQueue;
+        private readonly CancellationTokenSource _tickCancellation;
         private Task _queueTask;
 
+
+        private const int TICK_INTERVAL = 60_000;
         private const decimal PER_TICK_BONUS = 0.50m;
         private const decimal TUNE_IN_BONUS = 100.0m;
 
@@ -65,7 +67,6 @@ namespace WamBot.Twitch
             IServiceProvider services,
             TwitchClient twitchClient,
             TwitchAPI twitchAPI,
-            UserService userService,
             LiveStreamMonitorService liveStreamMonitor)
         {
             _logger = logger;
@@ -73,11 +74,10 @@ namespace WamBot.Twitch
             _twitchAPI = twitchAPI;
             _twitchClient = twitchClient;
             _liveStreamMonitor = liveStreamMonitor;
-            _userService = userService;
 
             _taskQueue = new ConcurrentQueue<Func<Task>>();
             _channelStateStore = new ConcurrentDictionary<string, ChannelState>();
-            _payoutTimer = new Timer(OnPayoutTick, null, 0, 60_000);
+            _tickCancellation = new CancellationTokenSource();
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
@@ -88,6 +88,8 @@ namespace WamBot.Twitch
 
             _liveStreamMonitor.OnStreamOnline += OnStreamOnline;
             _liveStreamMonitor.OnStreamOffline += OnStreamOffline;
+
+            _ = Task.Run(() => this.TickLoopAsync(_tickCancellation.Token));
             return Task.CompletedTask;
         }
 
@@ -99,6 +101,8 @@ namespace WamBot.Twitch
 
             _liveStreamMonitor.OnStreamOnline -= OnStreamOnline;
             _liveStreamMonitor.OnStreamOffline -= OnStreamOffline;
+            _tickCancellation.Cancel();
+
             return Task.CompletedTask;
         }
 
@@ -120,37 +124,36 @@ namespace WamBot.Twitch
         private void OnExistingUsersDetected(object sender, OnExistingUsersDetectedArgs e) => QueueTask(async () =>
         {
             using var scope = _services.CreateScope();
-            using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
+            using var userService = scope.ServiceProvider.GetRequiredService<UserService>();
 
             var channelState = GetChannelState(e.Channel);
-            foreach (var user in e.Users)
+            await foreach (var (name, dbUser) in userService.GetOrCreateChannelUsersAsync(e.Channel, e.Users))
             {
-                var dbUser = await _userService.GetOrCreateChannelUserAsync(e.Channel, user);
                 if (channelState.StreamId != null && dbUser.LastStreamId != channelState.StreamId)
                 {
                     dbUser.Balance += TUNE_IN_BONUS;
                     dbUser.LastStreamId = channelState.StreamId;
 
-                    _logger.LogDebug("Giving {User} tune in bonus!", user);
+                    _logger.LogDebug("Giving {User} tune in bonus!", name);
                 }
 
-                var activeUser = channelState.ActiveUsers.GetOrAdd(user, (s) => new ActiveUser() { IsActive = true, LastSeen = DateTimeOffset.Now });
+                var activeUser = channelState.ActiveUsers.GetOrAdd(name, (s) => new ActiveUser() { Id = dbUser.UserId, IsActive = true, LastSeen = DateTimeOffset.Now });
 
                 activeUser.IsActive = true;
                 activeUser.LastSeen = DateTimeOffset.Now;
             }
-
-            await dbContext.SaveChangesAsync();
         });
 
         private void OnUserJoined(object sender, OnUserJoinedArgs e) => QueueTask(async () =>
         {
             using var scope = _services.CreateScope();
-            using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
+            using var userService = scope.ServiceProvider.GetRequiredService<UserService>();
 
             var channelState = GetChannelState(e.Channel);
-            var dbUser = await _userService.GetOrCreateChannelUserAsync(e.Channel, e.Username);
-            if (channelState.StreamId != null && dbUser.LastStreamId != channelState.StreamId)
+            var dbUser = await userService.GetOrCreateChannelUserAsync(e.Channel, e.Username);
+            if (dbUser) return;
+
+            if (channelState.StreamId != null && dbUser?.LastStreamId != channelState.StreamId)
             {
                 dbUser.Balance += TUNE_IN_BONUS;
                 dbUser.LastStreamId = channelState.StreamId;
@@ -158,11 +161,9 @@ namespace WamBot.Twitch
                 _logger.LogDebug("Giving {User} tune in bonus!", e.Username);
             }
 
-            var activeUser = channelState.ActiveUsers.GetOrAdd(e.Username, (s) => new ActiveUser() { IsActive = true, LastSeen = DateTimeOffset.Now });
+            var activeUser = channelState.ActiveUsers.GetOrAdd(e.Username, (s) => new ActiveUser() { Id = dbUser.UserId, IsActive = true, LastSeen = DateTimeOffset.Now });
             activeUser.IsActive = true;
             activeUser.LastSeen = DateTimeOffset.Now;
-
-            await dbContext.SaveChangesAsync();
         });
 
         private void OnUserLeft(object sender, OnUserLeftArgs e)
@@ -173,43 +174,54 @@ namespace WamBot.Twitch
             activeUser.LastSeen = DateTimeOffset.Now;
         }
 
-        private void OnPayoutTick(object _) => QueueTask(async () =>
+        private async Task TickLoopAsync(CancellationToken token)
         {
-            var stamp = Stopwatch.GetTimestamp();
-            using var scope = _services.CreateScope();
-            using var dbContext = scope.ServiceProvider.GetRequiredService<BotDbContext>();
-
-            var i = 0;
-            var j = 0;
-            foreach (var state in this._channelStateStore)
+            try
             {
-                if (!state.Value.IsLive)
-                    continue;
-
-                foreach (var user in state.Value.ActiveUsers)
+                while (!token.IsCancellationRequested)
                 {
-                    if (!user.Value.IsActive)
-                        continue;
-                    
-                    j++;
+                    await Task.Delay(TICK_INTERVAL, token);
 
-                    var dbUser = await _userService.GetOrCreateChannelUserAsync(state.Key, user.Key, false);
-                    if (dbUser != null && dbUser.LastStreamId == state.Value.StreamId)
+                    var stamp = Stopwatch.GetTimestamp();
+                    using var scope = _services.CreateScope();
+                    using var userService = scope.ServiceProvider.GetRequiredService<UserService>();
+
+                    var i = 0;
+                    var j = 0;
+                    foreach (var state in this._channelStateStore)
                     {
-                        dbUser.Balance += PER_TICK_BONUS;
-                        i++;
-                        _logger.LogDebug("Giving {User} per tick bonus!", user.Key);
+                        if (!state.Value.IsLive)
+                            continue;
+
+                        foreach (var user in state.Value.ActiveUsers)
+                        {
+                            if (!user.Value.IsActive)
+                                continue;
+
+                            j++;
+
+                            var dbUser = await userService.GetChannelUserAsync(state.Key, user.Key, user.Value.Id);
+                            if (dbUser != null)
+                            {
+                                i++;
+                                dbUser.Balance += PER_TICK_BONUS;
+                                dbUser.LastStreamId = state.Value.StreamId;
+                                _logger.LogDebug("Giving {User} per tick bonus!", user.Key);
+                            }
+                        }
+                    }
+
+
+                    if (i > 0)
+                    {
+                        //await dbContext.SaveChangesAsync(token);
+                        _logger.LogInformation("Gave {Num1}/{Num2} users per tick bonus ({Time:N2}ms)", i, j, Extensions.TimestampToMilliseconds(stamp));
                     }
                 }
             }
+            catch (TaskCanceledException) { }
+        }
 
-
-            if (i > 0)
-            {
-                await dbContext.SaveChangesAsync();
-                _logger.LogInformation("Gave {Num1}/{Num2} users per tick bonus ({Time:N2}ms)", i, j, Extensions.TimestampToMilliseconds(stamp));
-            }
-        });
 
         private ChannelState GetChannelState(string channelName)
             => _channelStateStore.TryGetValue(channelName, out var store) ? store : _channelStateStore[channelName] = new ChannelState();

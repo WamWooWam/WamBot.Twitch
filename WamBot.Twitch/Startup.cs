@@ -114,8 +114,8 @@ namespace WamBot.Twitch
             services.AddScoped<UserService>();
 
             services.AddSingleton<CommandRegistry>();
-            services.AddHostedService<BotService>();
             services.AddHostedService<EconomyService>();
+            services.AddHostedService<BotService>();
             services.AddHostedService<WelcomeService>();
         }
 
