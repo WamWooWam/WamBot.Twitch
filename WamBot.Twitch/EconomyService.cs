@@ -151,7 +151,7 @@ namespace WamBot.Twitch
 
             var channelState = GetChannelState(e.Channel);
             var dbUser = await userService.GetOrCreateChannelUserAsync(e.Channel, e.Username);
-            if (dbUser != null) return;
+            if (dbUser == null) return;
 
             if (channelState.StreamId != null && dbUser?.LastStreamId != channelState.StreamId)
             {

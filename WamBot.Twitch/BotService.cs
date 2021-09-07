@@ -32,7 +32,6 @@ namespace WamBot.Twitch
         private readonly TwitchAPI _api;
         private bool _stop;
 
-
         private readonly string[] _prefixes = new[] { "!", "w;" };
 
         public BotService(

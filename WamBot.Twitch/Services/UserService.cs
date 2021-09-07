@@ -238,6 +238,9 @@ namespace WamBot.Twitch.Services
             return dbUser;
         }
 
+        public async Task SaveChangesAsync() =>
+            await _database.SaveChangesAsync();
+
         public void Dispose()
         {
             _database.SaveChanges();

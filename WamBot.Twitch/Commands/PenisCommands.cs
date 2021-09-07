@@ -134,7 +134,7 @@ namespace WamBot.Twitch.Commands
                 ctx.Reply("You now have a penis, congratulations!");
             }
 
-            await _database.SaveChangesAsync();
+            await _userService.SaveChangesAsync();
         }
 
         [OwnerOnly]
@@ -145,7 +145,7 @@ namespace WamBot.Twitch.Commands
             user.PenisType = type;
 
             ctx.Reply($"Set {targetUser.Name}'s penis type to {type}");
-            await _database.SaveChangesAsync();
+            await _userService.SaveChangesAsync();
         }
 
         [Cooldown(30, PerUser = true)]
@@ -165,7 +165,7 @@ namespace WamBot.Twitch.Commands
             dbUser.PenisOffset = _random.Next();
 
             await SendPenisMessageAsync(ctx, dbUser, ctx.Message.DisplayName);
-            await _database.SaveChangesAsync();
+            await _userService.SaveChangesAsync();
         }
 
         private async Task SendPenisMessageAsync(CommandContext ctx, DbUser dbUser, string name)
